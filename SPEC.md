@@ -16,8 +16,8 @@ behavior.
 ## 1. Problem Statement
 
 Symphony is a long-running automation service that continuously reads work from an issue tracker
-(Linear in this specification version), creates an isolated workspace for each issue, and runs a
-coding agent session for that issue inside the workspace.
+(agnostic to the tracker type, supporting Linear, Jira, GitHub Issues, etc.), creates an isolated workspace for each issue, and runs a
+coding agent session for that issue inside the workspace using configurable AI sandboxes and coding agents.
 
 The service solves four operational problems:
 
@@ -98,10 +98,15 @@ Important boundary:
    - Runs workspace lifecycle hooks.
    - Cleans workspaces for terminal issues.
 
-6. `Agent Runner`
+6. `Sandbox Manager`
+   - Manages the lifecycle of AI sandbox environments (local, Docker containers, Daytona sessions, etc.).
+   - Provisions and tears down sandbox instances for agent execution.
+   - Ensures sandbox isolation and resource limits.
+
+7. `Agent Runner`
    - Creates workspace.
    - Builds prompt from issue + workflow template.
-   - Launches the coding agent app-server client.
+   - Launches the coding agent in the configured sandbox environment.
    - Streams agent updates back to the orchestrator.
 
 7. `Status Surface` (OPTIONAL)
@@ -126,21 +131,23 @@ Symphony is easiest to port when kept in these layers:
 3. `Coordination Layer` (orchestrator)
    - Polling loop, issue eligibility, concurrency, retries, reconciliation.
 
-4. `Execution Layer` (workspace + agent subprocess)
-   - Filesystem lifecycle, workspace preparation, coding-agent protocol.
+4. `Execution Layer` (workspace + sandbox + agent subprocess)
+   - Filesystem lifecycle, workspace preparation, sandbox provisioning, coding-agent protocol.
 
-5. `Integration Layer` (Linear adapter)
+6. `Integration Layer` (tracker and sandbox adapters)
    - API calls and normalization for tracker data.
+   - Sandbox provisioning and management.
 
 6. `Observability Layer` (logs + OPTIONAL status surface)
    - Operator visibility into orchestrator and agent behavior.
 
 ### 3.3 External Dependencies
 
-- Issue tracker API (Linear for `tracker.kind: linear` in this specification version).
+- Issue tracker API (configurable, supporting Linear, Jira, GitHub Issues, etc.).
 - Local filesystem for workspaces and logs.
 - OPTIONAL workspace population tooling (for example Git CLI, if used).
-- Coding-agent executable that supports the targeted Codex app-server mode.
+- Coding-agent executable that supports the targeted protocol (configurable, supporting GitHub Copilot CLI, Claude Code, OpenAI Codex, etc.).
+- Configurable AI sandbox environment (local, Docker, Daytona, E2B, Modal, etc.) for running the coding agent.
 - Host environment authentication for the issue tracker and coding agent.
 
 ## 4. Core Domain Model
@@ -349,7 +356,7 @@ Fields:
 
 - `kind` (string)
   - REQUIRED for dispatch.
-  - Current supported value: `linear`
+  - Supported values: `linear`, `jira`, `github`, etc. (implementation-defined extensions)
 - `endpoint` (string)
   - Default for `tracker.kind == "linear"`: `https://api.linear.app/graphql`
 - `api_key` (string)
@@ -405,10 +412,36 @@ Fields:
   - Invalid values fail configuration validation.
   - Changes SHOULD be re-applied at runtime for future hook executions.
 
-#### 5.3.5 `agent` (object)
+#### 5.3.5 `sandbox` (object)
 
 Fields:
 
+- `kind` (string)
+  - Default: `local`
+  - Supported values: `local`, `docker`, `daytona`, `e2b`, `modal`, `blaxel`, `runloop`, `cloudflare`, `vercel`, etc. (implementation-defined)
+- `image` (string, OPTIONAL)
+  - For container-based sandboxes like `docker`, specifies the Docker image to use.
+  - Default: implementation-defined (e.g., `ubuntu:latest`)
+- `resources` (object, OPTIONAL)
+  - CPU and memory limits for the sandbox.
+  - Fields: `cpu` (string, e.g., "1"), `memory` (string, e.g., "1Gi")
+- `env` (map of strings, OPTIONAL)
+  - Environment variables to set in the sandbox.
+
+#### 5.3.6 `agent` (object)
+
+Fields:
+
+- `kind` (string)
+  - Default: `codex`
+  - Supported values: `codex`, `copilot-cli`, `claude-code`, `openai-codex`, `snowflake-cortex`, `gemini-cli`, `pi-dev`, etc. (implementation-defined)
+- `command` (string shell command)
+  - Default: depends on `agent.kind` (e.g., `codex app-server` for `codex`)
+  - The runtime launches this command in the sandbox environment.
+  - The launched process MUST speak a compatible protocol.
+- `approval_policy` (string)
+  - Default: implementation-defined.
+  - For agents that support approval policies.
 - `max_concurrent_agents` (integer)
   - Default: `10`
   - Changes SHOULD be re-applied at runtime and affect subsequent dispatch decisions.
@@ -424,7 +457,7 @@ Fields:
   - State keys are normalized (`lowercase`) for lookup.
   - Invalid entries (non-positive or non-numeric) are ignored.
 
-#### 5.3.6 `codex` (object)
+#### 5.3.7 `codex` (object) [DEPRECATED: Use `agent` instead]
 
 Fields:
 
@@ -475,7 +508,7 @@ Template input variables:
 Fallback prompt behavior:
 
 - If the workflow prompt body is empty, the runtime MAY use a minimal default prompt
-  (`You are working on an issue from Linear.`).
+  (`You are working on an issue.`).
 - Workflow file read/parse failures are configuration/validation errors and SHOULD NOT silently fall
   back to a prompt.
 
@@ -570,10 +603,10 @@ This section is intentionally redundant so a coding agent can implement the conf
 Extension fields are documented in the extension section that defines them. Core conformance does
 not require recognizing or validating extension fields unless that extension is implemented.
 
-- `tracker.kind`: string, REQUIRED, currently `linear`
-- `tracker.endpoint`: string, default `https://api.linear.app/graphql` when `tracker.kind=linear`
-- `tracker.api_key`: string or `$VAR`, canonical env `LINEAR_API_KEY` when `tracker.kind=linear`
-- `tracker.project_slug`: string, REQUIRED when `tracker.kind=linear`
+- `tracker.kind`: string, REQUIRED, supported `linear`, `jira`, `github`, etc.
+- `tracker.endpoint`: string, default depends on `tracker.kind`
+- `tracker.api_key`: string or `$VAR`, canonical env depends on `tracker.kind`
+- `tracker.project_slug`: string, REQUIRED for some tracker kinds
 - `tracker.active_states`: list of strings, default `["Todo", "In Progress"]`
 - `tracker.terminal_states`: list of strings, default `["Closed", "Cancelled", "Canceled", "Duplicate", "Done"]`
 - `polling.interval_ms`: integer, default `30000`
@@ -583,17 +616,24 @@ not require recognizing or validating extension fields unless that extension is 
 - `hooks.after_run`: shell script or null
 - `hooks.before_remove`: shell script or null
 - `hooks.timeout_ms`: integer, default `60000`
+- `sandbox.kind`: string, default `local`
+- `sandbox.image`: string, default implementation-defined
+- `sandbox.resources`: object, OPTIONAL
+- `sandbox.env`: map of strings, OPTIONAL
+- `agent.kind`: string, default `codex`
+- `agent.command`: shell command string, default depends on `agent.kind`
+- `agent.approval_policy`: string, default implementation-defined
 - `agent.max_concurrent_agents`: integer, default `10`
 - `agent.max_turns`: integer, default `20`
 - `agent.max_retry_backoff_ms`: integer, default `300000` (5m)
 - `agent.max_concurrent_agents_by_state`: map of positive integers, default `{}`
-- `codex.command`: shell command string, default `codex app-server`
-- `codex.approval_policy`: Codex `AskForApproval` value, default implementation-defined
-- `codex.thread_sandbox`: Codex `SandboxMode` value, default implementation-defined
-- `codex.turn_sandbox_policy`: Codex `SandboxPolicy` value, default implementation-defined
-- `codex.turn_timeout_ms`: integer, default `3600000`
-- `codex.read_timeout_ms`: integer, default `5000`
-- `codex.stall_timeout_ms`: integer, default `300000`
+- `codex.command`: shell command string, default `codex app-server` [DEPRECATED]
+- `codex.approval_policy`: Codex `AskForApproval` value, default implementation-defined [DEPRECATED]
+- `codex.thread_sandbox`: Codex `SandboxMode` value, default implementation-defined [DEPRECATED]
+- `codex.turn_sandbox_policy`: Codex `SandboxPolicy` value, default implementation-defined [DEPRECATED]
+- `codex.turn_timeout_ms`: integer, default `3600000` [DEPRECATED]
+- `codex.read_timeout_ms`: integer, default `5000` [DEPRECATED]
+- `codex.stall_timeout_ms`: integer, default `300000` [DEPRECATED]
 
 ## 7. Orchestration State Machine
 
@@ -905,17 +945,18 @@ Invariant 3: Workspace key is sanitized.
 
 ## 10. Agent Runner Protocol (Coding Agent Integration)
 
-This section defines Symphony's language-neutral responsibilities when integrating a Codex
-app-server. The Codex app-server protocol for the targeted Codex version is the source of truth for
-protocol schemas, message payloads, transport framing, and method names.
+This section defines Symphony's language-neutral responsibilities when integrating various coding
+agents (Codex, GitHub Copilot CLI, Claude Code, etc.). The specific agent protocol for the targeted
+agent kind is the source of truth for protocol schemas, message payloads, transport framing, and
+method names.
 
 Protocol source of truth:
 
-- Implementations MUST send messages that are valid for the targeted Codex app-server version.
-- Implementations MUST consult the targeted Codex app-server documentation or generated schema
-  instead of treating this specification as a protocol schema.
-- If this specification appears to conflict with the targeted Codex app-server protocol, the Codex
-  protocol controls protocol shape and transport behavior.
+- Implementations MUST send messages that are valid for the targeted agent kind and version.
+- Implementations MUST consult the targeted agent's documentation or generated schema instead of
+  treating this specification as a protocol schema.
+- If this specification appears to conflict with the targeted agent's protocol, the agent protocol
+  controls protocol shape and transport behavior.
 - Symphony-specific requirements in this section still control orchestration behavior, workspace
   selection, prompt construction, continuation handling, and observability extraction.
 
@@ -923,16 +964,17 @@ Protocol source of truth:
 
 Subprocess launch parameters:
 
-- Command: `codex.command`
-- Invocation: `bash -lc <codex.command>`
-- Working directory: workspace path
-- Transport/framing: the protocol transport required by the targeted Codex app-server version
+- Command: `agent.command`
+- Invocation: depends on `agent.kind` and `sandbox.kind` (e.g., `bash -lc <agent.command>` for local)
+- Working directory: workspace path (or sandbox equivalent)
+- Transport/framing: the protocol transport required by the targeted agent
 
 Notes:
 
-- The default command is `codex app-server`.
+- The default command depends on `agent.kind`.
 - Approval policy, sandbox policy, cwd, prompt input, and OPTIONAL tool declarations are supplied
-  using fields supported by the targeted Codex app-server version.
+  using fields supported by the targeted agent.
+- For sandboxed execution, the agent is launched within the provisioned sandbox environment.
 
 RECOMMENDED additional process settings:
 
@@ -940,13 +982,11 @@ RECOMMENDED additional process settings:
 
 ### 10.2 Session Startup Responsibilities
 
-Reference: https://developers.openai.com/codex/app-server/
+Startup MUST follow the targeted agent's contract. Symphony additionally requires the client to:
 
-Startup MUST follow the targeted Codex app-server contract. Symphony additionally requires the
-client to:
-
-- Start the app-server subprocess in the per-issue workspace.
-- Initialize the app-server session using the targeted Codex app-server protocol.
+- Provision the sandbox environment if `sandbox.kind` != `local`.
+- Start the agent subprocess in the per-issue workspace (or sandbox equivalent).
+- Initialize the agent session using the targeted agent protocol.
 - Create or resume a coding-agent thread according to the targeted protocol.
 - Supply the absolute per-issue workspace path as the thread/turn working directory wherever the
   targeted protocol accepts cwd.
@@ -1130,7 +1170,7 @@ Note:
 
 - Workspaces are intentionally preserved after successful runs.
 
-## 11. Issue Tracker Integration Contract (Linear-Compatible)
+## 11. Issue Tracker Integration Contract (Tracker-Agnostic)
 
 ### 11.1 REQUIRED Operations
 
@@ -1145,11 +1185,12 @@ An implementation MUST support these tracker adapter operations:
 3. `fetch_issue_states_by_ids(issue_ids)`
    - Used for active-run reconciliation.
 
-### 11.2 Query Semantics (Linear)
+### 11.2 Query Semantics
 
-Linear-specific requirements for `tracker.kind == "linear"`:
+Implementation-specific requirements for each supported `tracker.kind`:
 
-- `tracker.kind == "linear"`
+For `tracker.kind == "linear"`:
+
 - GraphQL endpoint (default `https://api.linear.app/graphql`)
 - Auth token sent in `Authorization` header
 - `tracker.project_slug` maps to Linear project `slugId`
@@ -1159,13 +1200,13 @@ Linear-specific requirements for `tracker.kind == "linear"`:
 - Page size default: `50`
 - Network timeout: `30000 ms`
 
+For other tracker kinds (e.g., `jira`, `github`), implementations define their own query semantics,
+but the normalized outputs MUST match the domain model in Section 4.
+
 Important:
 
-- Linear GraphQL schema details can drift. Keep query construction isolated and test the exact query
+- Tracker API schema details can drift. Keep query construction isolated and test the exact query
   fields/types REQUIRED by this specification.
-
-A non-Linear implementation MAY change transport details, but the normalized outputs MUST match the
-domain model in Section 4.
 
 ### 11.3 Normalization Rules
 
@@ -1783,13 +1824,13 @@ function dispatch_issue(issue, state, attempt):
     identifier: issue.identifier,
     issue,
     session_id: null,
-    codex_app_server_pid: null,
-    last_codex_message: null,
-    last_codex_event: null,
-    last_codex_timestamp: null,
-    codex_input_tokens: 0,
-    codex_output_tokens: 0,
-    codex_total_tokens: 0,
+    agent_pid: null,
+    last_agent_message: null,
+    last_agent_event: null,
+    last_agent_timestamp: null,
+    agent_input_tokens: 0,
+    agent_output_tokens: 0,
+    agent_total_tokens: 0,
     last_reported_input_tokens: 0,
     last_reported_output_tokens: 0,
     last_reported_total_tokens: 0,
@@ -1802,7 +1843,7 @@ function dispatch_issue(issue, state, attempt):
   return state
 ```
 
-### 16.5 Worker Attempt (Workspace + Prompt + Agent)
+### 16.5 Worker Attempt (Workspace + Sandbox + Agent)
 
 ```text
 function run_agent_attempt(issue, attempt, orchestrator_channel):
@@ -1810,12 +1851,18 @@ function run_agent_attempt(issue, attempt, orchestrator_channel):
   if workspace failed:
     fail_worker("workspace error")
 
+  sandbox = sandbox_manager.provision_for_issue(issue.identifier, workspace.path)
+  if sandbox failed:
+    fail_worker("sandbox provisioning error")
+
   if run_hook("before_run", workspace.path) failed:
+    sandbox_manager.teardown(sandbox)
     fail_worker("before_run hook error")
 
-  session = app_server.start_session(workspace=workspace.path)
+  session = agent.start_session(sandbox=sandbox, workspace=workspace.path)
   if session failed:
     run_hook_best_effort("after_run", workspace.path)
+    sandbox_manager.teardown(sandbox)
     fail_worker("agent session startup error")
 
   max_turns = config.agent.max_turns
@@ -1824,26 +1871,29 @@ function run_agent_attempt(issue, attempt, orchestrator_channel):
   while true:
     prompt = build_turn_prompt(workflow_template, issue, attempt, turn_number, max_turns)
     if prompt failed:
-      app_server.stop_session(session)
+      agent.stop_session(session)
       run_hook_best_effort("after_run", workspace.path)
+      sandbox_manager.teardown(sandbox)
       fail_worker("prompt error")
 
-    turn_result = app_server.run_turn(
+    turn_result = agent.run_turn(
       session=session,
       prompt=prompt,
       issue=issue,
-      on_message=(msg) -> send(orchestrator_channel, {codex_update, issue.id, msg})
+      on_message=(msg) -> send(orchestrator_channel, {agent_update, issue.id, msg})
     )
 
     if turn_result failed:
-      app_server.stop_session(session)
+      agent.stop_session(session)
       run_hook_best_effort("after_run", workspace.path)
+      sandbox_manager.teardown(sandbox)
       fail_worker("agent turn error")
 
     refreshed_issue = tracker.fetch_issue_states_by_ids([issue.id])
     if refreshed_issue failed:
-      app_server.stop_session(session)
+      agent.stop_session(session)
       run_hook_best_effort("after_run", workspace.path)
+      sandbox_manager.teardown(sandbox)
       fail_worker("issue state refresh error")
 
     issue = refreshed_issue[0] or issue
@@ -1856,8 +1906,9 @@ function run_agent_attempt(issue, attempt, orchestrator_channel):
 
     turn_number = turn_number + 1
 
-  app_server.stop_session(session)
+  agent.stop_session(session)
   run_hook_best_effort("after_run", workspace.path)
+  sandbox_manager.teardown(sandbox)
 
   exit_normal()
 ```
@@ -2040,9 +2091,17 @@ Unless otherwise noted, Sections 17.1 through 17.7 are `Core Conformance`. Bulle
 - CLI accepts a positional workflow path argument (`path-to-WORKFLOW.md`)
 - CLI uses `./WORKFLOW.md` when no workflow path argument is provided
 - CLI errors on nonexistent explicit workflow path or missing default `./WORKFLOW.md`
-- CLI surfaces startup failure cleanly
+- CLI supports additional options:
+  - `--port <port>`: Enable HTTP server extension on specified port
+  - `--tracker-kind <kind>`: Override `tracker.kind` from workflow
+  - `--agent-kind <kind>`: Override `agent.kind` from workflow
+  - `--sandbox-kind <kind>`: Override `sandbox.kind` from workflow
+  - `--verbose`: Enable verbose logging
+  - `--dry-run`: Validate configuration without starting the service
+- CLI surfaces startup failure cleanly with detailed error messages
 - CLI exits with success when application starts and shuts down normally
 - CLI exits nonzero when startup fails or the host process exits abnormally
+- CLI supports graceful shutdown on SIGTERM/SIGINT
 
 ### 17.8 Real Integration Profile (RECOMMENDED)
 
@@ -2074,10 +2133,11 @@ Use the same validation profiles as Section 17:
 - Polling orchestrator with single-authority mutable state
 - Issue tracker client with candidate fetch + state refresh + terminal fetch
 - Workspace manager with sanitized per-issue workspaces
+- Sandbox manager for provisioning and managing AI sandbox environments
 - Workspace lifecycle hooks (`after_create`, `before_run`, `after_run`, `before_remove`)
 - Hook timeout config (`hooks.timeout_ms`, default `60000`)
-- Coding-agent app-server subprocess client with JSON line protocol
-- Codex launch command config (`codex.command`, default `codex app-server`)
+- Coding-agent subprocess client supporting multiple agent kinds
+- Agent launch command config (`agent.command`, default depends on `agent.kind`)
 - Strict prompt rendering with `issue` and `attempt` variables
 - Exponential retry queue with continuation retries after normal exit
 - Configurable retry backoff cap (`agent.max_retry_backoff_ms`, default 5m)
@@ -2092,12 +2152,14 @@ Use the same validation profiles as Section 17:
   exposes the baseline endpoints/error semantics in Section 13.7 if shipped.
 - `linear_graphql` client-side tool extension exposes raw Linear GraphQL access through the
   app-server session using configured Symphony auth.
+- Support for multiple issue tracker kinds beyond Linear (e.g., Jira, GitHub Issues).
+- Support for multiple AI sandbox kinds (e.g., Docker, Daytona, E2B).
+- Support for multiple coding agent kinds (e.g., GitHub Copilot CLI, Claude Code).
 - TODO: Persist retry queue and session metadata across process restarts.
 - TODO: Make observability settings configurable in workflow front matter without prescribing UI
   implementation details.
 - TODO: Add first-class tracker write APIs (comments/state transitions) in the orchestrator instead
   of only via agent tools.
-- TODO: Add pluggable issue tracker adapters beyond Linear.
 
 ### 18.3 Operational Validation Before Production (RECOMMENDED)
 

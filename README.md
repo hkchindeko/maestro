@@ -1,11 +1,13 @@
 # Maestro
 
+Maestro comes from the idea of rhythmic flow and measured movement, which reflects this project’s goal of orchestrating coding agents in a steady, controlled delivery rhythm. As a fork of OpenAI’s Symphony, Maestro continues the orchestration metaphor—shifting from supervising individual agents to managing work as it flows through autonomous implementation runs.
+
 Maestro turns project work into isolated, autonomous implementation runs, allowing teams to manage
 work instead of supervising coding agents.
 
-[![Maestro demo video preview](.github/media/Maestro-demo-poster.jpg)](.github/media/Maestro-demo.mp4)
+[![Maestro demo video preview](.github/media/symphony-demo-poster.jpg)](.github/media/symphony-demo.mp4)
 
-_In this [demo video](.github/media/Maestro-demo.mp4), Maestro monitors a Linear board for work and spawns agents to handle the tasks. The agents complete the tasks and provide proof of work: CI status, PR review feedback, complexity analysis, and walkthrough videos. When accepted, the agents land the PR safely. Engineers do not need to supervise Codex; they can manage the work at a higher level._
+_In this [demo video](.github/media/symphony-demo.mp4), Maestro monitors a Linear board for work and spawns agents to handle the tasks. The agents complete the tasks and provide proof of work: CI status, PR review feedback, complexity analysis, and walkthrough videos. When accepted, the agents land the PR safely. Engineers do not need to supervise Codex; they can manage the work at a higher level._
 
 > [!WARNING]
 > Maestro is a low-key engineering preview for testing in trusted environments.
@@ -23,7 +25,7 @@ moving from managing coding agents to managing work that needs to get done.
 Tell your favorite coding agent to build Maestro in a programming language of your choice:
 
 > Implement Maestro according to the following spec:
-> https://github.com/openai/Maestro/blob/main/SPEC.md
+> https://github.com/laurentchindeko-APAC-CTIAdmin/maestro/blob/main/SPEC.md
 
 ### Option 2. Use our experimental reference implementation
 
@@ -32,7 +34,7 @@ and run the Elixir-based Maestro implementation. You can also ask your favorite 
 help with the setup:
 
 > Set up Maestro for my repository based on
-> https://github.com/openai/Maestro/blob/main/elixir/README.md
+> https://github.com/laurentchindeko-APAC-CTIAdmin/maestro/blob/main/elixir/README.md
 
 ---
 
