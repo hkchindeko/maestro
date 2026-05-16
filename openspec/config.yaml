@@ -3,18 +3,31 @@ schema: spec-driven
 # Project context (optional)
 # This is shown to AI when creating artifacts.
 # Add your tech stack, conventions, style guides, domain knowledge, etc.
-# Example:
-#   context: |
-#     Tech stack: TypeScript, React, Node.js
-#     We use conventional commits
-#     Domain: e-commerce platform
+context: |
+  Maestro is a Python implementation of the OpenAI Symphony specification (SPEC.md at repo root).
+  Tech stack: Python 3.12+, Pydantic v2, Typer (CLI), Jinja2 (templates), httpx (HTTP), watchdog (file watch), pytest (testing), ruff (linting), mypy (type checking).
+  Architecture: CLI → Observability → Coordination → Execution → Integration → Config
+  Conventions: ruff format (Black-compatible, 100 char line), mypy --strict, Google-style docstrings, snake_case modules/functions, PascalCase classes, UPPER_SNAKE_CASE constants.
+  Testing: pytest, 100% coverage on core modules.
+  OpenSpec workflow: propose → apply → archive. Each change has proposal.md, design.md, tasks.md, specs/.
+  Reference SPEC.md sections explicitly in all artifacts.
+  The elixir/ folder contains a reference Elixir implementation — do not modify it.
 
 # Per-artifact rules (optional)
 # Add custom rules for specific artifacts.
-# Example:
-#   rules:
-#     proposal:
-#       - Keep proposals under 500 words
-#       - Always include a "Non-goals" section
-#     tasks:
-#       - Break tasks into chunks of max 2 hours
+rules:
+  proposal:
+    - Reference SPEC.md sections explicitly
+    - Include a "Non-goals" or "Non-Decisions" section
+    - List impacted modules
+  design:
+    - Document decisions with rationale and alternatives considered
+    - Include risks and mitigations table
+  tasks:
+    - Break tasks into chunks of max 2-4 hours
+    - Group tasks by logical unit (models, loader, CLI, tests)
+    - Use checkboxes: `- [ ] N.N Description`
+  specs:
+    - Each requirement must trace back to a SPEC.md section
+    - Use "## ADDED Requirements", "## MODIFIED Requirements", "## REMOVED Requirements"
+    - Include test expectations under each requirement
