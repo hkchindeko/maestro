@@ -164,6 +164,15 @@ class CodexConfig(BaseModel):
     stall_timeout_ms: int = 300000
 
 
+class ServerConfig(BaseModel):
+    """HTTP server extension configuration per SPEC §13.7.
+
+    Enabled when port is present. CLI --port overrides server.port.
+    """
+
+    port: int | None = None
+
+
 class WorkflowConfig(BaseModel):
     """Root workflow configuration combining all sub-configs.
 
@@ -177,6 +186,7 @@ class WorkflowConfig(BaseModel):
     sandbox: SandboxConfig = Field(default_factory=SandboxConfig)
     agent: AgentConfig = Field(default_factory=AgentConfig)
     codex: CodexConfig = Field(default_factory=CodexConfig)
+    server: ServerConfig = Field(default_factory=ServerConfig)
 
     @model_validator(mode="before")
     @classmethod

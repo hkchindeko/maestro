@@ -89,8 +89,23 @@ def run(
         typer.echo("Dry run complete. No work dispatched.")
         raise typer.Exit(0)
 
-    typer.echo("Starting Maestro service...")
-    # TODO: Start orchestrator event loop
+    # Resolve server port: CLI --port overrides server.port config
+    effective_port = port if port is not None else config.server.port
+
+    if effective_port is not None:
+        typer.echo(f"Starting HTTP server on 127.0.0.1:{effective_port}...")
+        # TODO: Start orchestrator and server as asyncio tasks
+        from maestro.web.app import start_server
+        import asyncio
+
+        # Placeholder state — orchestrator will provide the real state
+        from maestro.core.state import OrchestratorState
+        state = OrchestratorState()
+
+        asyncio.run(start_server(state, effective_port))
+    else:
+        typer.echo("Starting Maestro service...")
+        # TODO: Start orchestrator event loop
 
 
 if __name__ == "__main__":
