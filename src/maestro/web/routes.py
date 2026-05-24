@@ -6,6 +6,7 @@ Implements SPEC §13.7.2 JSON REST API endpoints.
 from __future__ import annotations
 
 import asyncio
+import inspect
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request, status
@@ -14,10 +15,6 @@ from maestro.core.state import OrchestratorState
 from maestro.observability.snapshot import SnapshotBuilder
 
 router = APIRouter(prefix="/api/v1")
-
-# Coalescing state for /refresh endpoint
-_last_refresh_requested_at: datetime | None = None
-_refresh_event: asyncio.Event | None = None
 
 
 def _get_state(request: Request) -> OrchestratorState:
@@ -50,21 +47,23 @@ async def get_state(request: Request) -> dict:
     snapshot_dict = snapshot.to_dict()
 
     # Build the SPEC-conformant response shape
-    running_rows = []
-    for r in snapshot.running:
+    running_rows: list[dict] = []
+    for running_row in snapshot.running:
         # Get the full RunningEntry for more details
-        entry = state.running.get(r.issue_id)
-        last_event_at = entry.last_agent_timestamp if entry else r.started_at
+        entry = state.running.get(running_row.issue_id)
+        last_event_at = entry.last_agent_timestamp if entry else running_row.started_at
         running_rows.append(
             {
-                "issue_id": r.issue_id,
-                "issue_identifier": r.issue_identifier,
+                "issue_id": running_row.issue_id,
+                "issue_identifier": running_row.issue_identifier,
                 "state": entry.issue.state if entry else "Unknown",
-                "session_id": r.session_id,
-                "turn_count": r.turn_count,
-                "last_event": r.last_agent_event,
+                "session_id": running_row.session_id,
+                "turn_count": running_row.turn_count,
+                "last_event": running_row.last_agent_event,
                 "last_message": entry.last_agent_message if entry else "",
-                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "started_at": running_row.started_at.isoformat()
+                if running_row.started_at
+                else None,
                 "last_event_at": last_event_at.isoformat() if last_event_at else None,
                 "tokens": {
                     "input_tokens": entry.agent_input_tokens if entry else 0,
@@ -74,17 +73,17 @@ async def get_state(request: Request) -> dict:
             }
         )
 
-    retrying_rows = []
-    for r in snapshot.retrying:
+    retrying_rows: list[dict] = []
+    for retry_row in snapshot.retrying:
         retrying_rows.append(
             {
-                "issue_id": r.issue_id,
-                "issue_identifier": r.identifier,
-                "attempt": r.attempt,
+                "issue_id": retry_row.issue_id,
+                "issue_identifier": retry_row.identifier,
+                "attempt": retry_row.attempt,
                 "due_at": datetime.fromtimestamp(
-                    r.due_at_ms / 1000.0, tz=timezone.utc
+                    retry_row.due_at_ms / 1000.0, tz=timezone.utc
                 ).isoformat(),
-                "error": r.error,
+                "error": retry_row.error,
             }
         )
 
@@ -110,14 +109,14 @@ async def get_issue(issue_identifier: str, request: Request) -> dict:
     state = _get_state(request)
 
     # Find the issue in running entries
-    for entry_id, entry in state.running.items():
-        if entry.issue_identifier == issue_identifier:
-            return _build_issue_detail(entry, state, "running")
+    for running_entry in state.running.values():
+        if running_entry.issue_identifier == issue_identifier:
+            return _build_issue_detail(running_entry, state, "running")
 
     # Find in retry entries
-    for entry_id, entry in state.retry_attempts.items():
-        if entry.identifier == issue_identifier:
-            return _build_retry_detail(entry, state)
+    for retry_entry in state.retry_attempts.values():
+        if retry_entry.identifier == issue_identifier:
+            return _build_retry_detail(retry_entry, state)
 
     # Not found
     raise HTTPException(
@@ -208,20 +207,17 @@ async def refresh(request: Request) -> dict:
     Per SPEC §13.7.2: POST /api/v1/refresh
     Best-effort trigger; repeated requests may be coalesced.
     """
-    global _last_refresh_requested_at, _refresh_event
-
     now = datetime.now(timezone.utc)
     coalesced = False
-
-    if _refresh_event is not None and not _refresh_event.is_set():
+    if getattr(request.app.state, "refresh_pending", False):
         # Previous refresh still pending — coalesce
         coalesced = True
     else:
-        _refresh_event = asyncio.Event()
-        # Store the event on the app state so the orchestrator can await it
-        request.app.state.refresh_event = _refresh_event
-
-    _last_refresh_requested_at = now
+        callback = getattr(request.app.state, "refresh_callback", None)
+        request.app.state.refresh_pending = True
+        request.app.state.refresh_task = asyncio.create_task(
+            _invoke_refresh(request.app, callback)
+        )
 
     return {
         "queued": True,
@@ -229,3 +225,16 @@ async def refresh(request: Request) -> dict:
         "requested_at": now.isoformat(),
         "operations": ["poll", "reconcile"],
     }
+
+
+async def _invoke_refresh(app, callback) -> None:
+    """Invoke an optional refresh callback."""
+    if callback is None:
+        return
+
+    try:
+        result = callback()
+        if inspect.isawaitable(result):
+            await result
+    finally:
+        app.state.refresh_pending = False

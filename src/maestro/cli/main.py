@@ -7,6 +7,7 @@ from pathlib import Path
 import typer
 
 from maestro.cli import config as config_cmd
+from maestro.runtime import RuntimeCompositionError, apply_cli_overrides, run_runtime
 
 app = typer.Typer(
     name="maestro",
@@ -73,7 +74,13 @@ def run(
         typer.echo(f"Error: {e}", err=True)
         raise typer.Exit(1) from e
 
-    config = resolve_config(definition)
+    config = apply_cli_overrides(
+        resolve_config(definition),
+        tracker_kind=tracker_kind,
+        agent_kind=agent_kind,
+        sandbox_kind=sandbox_kind,
+        port=port,
+    )
     result = validate_dispatch_config(config, definition)
 
     if not result.ok:
@@ -88,23 +95,20 @@ def run(
         typer.echo("Dry run complete. No work dispatched.")
         raise typer.Exit(0)
 
-    # Resolve server port: CLI --port overrides server.port config
-    effective_port = port if port is not None else config.server.port
+    typer.echo("Starting Maestro service...")
+    if config.server.port is not None:
+        typer.echo(f"Starting HTTP server on 127.0.0.1:{config.server.port}...")
 
-    if effective_port is not None:
-        typer.echo(f"Starting HTTP server on 127.0.0.1:{effective_port}...")
-        # TODO: Start orchestrator and server as asyncio tasks
-        from maestro.web.app import start_server
-        import asyncio
+    import asyncio
 
-        # Placeholder state — orchestrator will provide the real state
-        from maestro.core.state import OrchestratorState
-        state = OrchestratorState()
-
-        asyncio.run(start_server(state, effective_port))
-    else:
-        typer.echo("Starting Maestro service...")
-        # TODO: Start orchestrator event loop
+    try:
+        asyncio.run(run_runtime(definition=definition, config=config, port=config.server.port))
+    except RuntimeCompositionError as e:
+        typer.echo(f"Runtime composition failed: {e}", err=True)
+        raise typer.Exit(1) from e
+    except Exception as e:
+        typer.echo(f"Runtime failed: {e}", err=True)
+        raise typer.Exit(1) from e
 
 
 if __name__ == "__main__":

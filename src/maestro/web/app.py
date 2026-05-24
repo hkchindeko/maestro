@@ -5,6 +5,8 @@ Implements SPEC §13.7 OPTIONAL HTTP server extension.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+
 import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.exceptions import HTTPException
@@ -12,6 +14,8 @@ from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from maestro.core.state import OrchestratorState
+
+RefreshCallback = Callable[[], Awaitable[None] | None]
 
 
 def _error_envelope(code: str, message: str) -> dict:
@@ -76,11 +80,15 @@ class ErrorEnvelopeMiddleware(BaseHTTPMiddleware):
         return response
 
 
-def create_app(state: OrchestratorState) -> FastAPI:
+def create_app(
+    state: OrchestratorState,
+    refresh_callback: RefreshCallback | None = None,
+) -> FastAPI:
     """Create a FastAPI application wired to an orchestrator state.
 
     Args:
         state: The orchestrator's runtime state for building snapshots.
+        refresh_callback: Optional callback invoked by POST /api/v1/refresh.
 
     Returns:
         A configured FastAPI application instance.
@@ -98,6 +106,9 @@ def create_app(state: OrchestratorState) -> FastAPI:
 
     # Store state reference on the app for route handlers to access
     app.state.maestro_state = state
+    app.state.refresh_callback = refresh_callback
+    app.state.refresh_pending = False
+    app.state.refresh_task = None
 
     # Import and register routes
     from maestro.web.routes import router
@@ -112,7 +123,11 @@ def create_app(state: OrchestratorState) -> FastAPI:
     return app
 
 
-async def start_server(state: OrchestratorState, port: int) -> None:
+async def start_server(
+    state: OrchestratorState,
+    port: int,
+    refresh_callback: RefreshCallback | None = None,
+) -> None:
     """Start the uvicorn HTTP server as an asyncio task.
 
     Binds to loopback (127.0.0.1) by default per SPEC §13.7.
@@ -120,8 +135,9 @@ async def start_server(state: OrchestratorState, port: int) -> None:
     Args:
         state: The orchestrator's runtime state.
         port: The port to bind to. 0 requests an ephemeral port.
+        refresh_callback: Optional callback invoked by POST /api/v1/refresh.
     """
-    app = create_app(state)
+    app = create_app(state, refresh_callback=refresh_callback)
     config = uvicorn.Config(
         app,
         host="127.0.0.1",

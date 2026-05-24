@@ -8,6 +8,7 @@ Implements SPEC §8.5 (Active Run Reconciliation):
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 from maestro.tracker.base import IssueSnapshot, Tracker
@@ -49,7 +50,7 @@ def is_stalled(
 async def reconcile_stalled_runs(
     state: OrchestratorState,
     stall_timeout_ms: int,
-    on_stall: callable[[str], None] | None = None,
+    on_stall: Callable[[str], None] | None = None,
 ) -> None:
     """Detect and handle stalled runs.
 
@@ -82,8 +83,8 @@ async def reconcile_tracker_states(
     tracker: Tracker,
     active_states: list[str],
     terminal_states: list[str],
-    on_terminal: callable[[str], None] | None = None,
-    on_non_active: callable[[str], None] | None = None,
+    on_terminal: Callable[[str], None] | None = None,
+    on_non_active: Callable[[str], None] | None = None,
 ) -> bool:
     """Reconcile running issues against tracker states.
 

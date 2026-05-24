@@ -5,6 +5,7 @@ Tests the FastAPI application, REST API endpoints, error handling, and dashboard
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 
 import pytest
@@ -221,6 +222,20 @@ class TestIssueEndpoint:
 
 class TestRefreshEndpoint:
     """Tests for POST /api/v1/refresh."""
+
+    def test_refresh_invokes_callback(self, state: OrchestratorState) -> None:
+        """Refresh endpoint schedules the runtime refresh callback."""
+        called = asyncio.Event()
+
+        async def refresh() -> None:
+            called.set()
+
+        app = create_app(state, refresh_callback=refresh)
+        client = TestClient(app)
+
+        response = client.post("/api/v1/refresh")
+        assert response.status_code == 202
+        assert called.is_set()
 
     def test_refresh_accepted(self, client: TestClient) -> None:
         """Refresh endpoint returns 202 Accepted."""

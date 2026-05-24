@@ -68,6 +68,7 @@ class Orchestrator:
         self._running = False
         self._tick_task: asyncio.Task[None] | None = None
         self._shutdown_event = asyncio.Event()
+        self._refresh_lock = asyncio.Lock()
 
     @property
     def state(self) -> OrchestratorState:
@@ -114,6 +115,11 @@ class Orchestrator:
                 pass
 
         self._shutdown_event.set()
+
+    async def request_refresh(self) -> None:
+        """Run one best-effort immediate poll/reconcile cycle."""
+        async with self._refresh_lock:
+            await self._on_tick()
 
     async def _poll_loop(self) -> None:
         """Main poll loop.

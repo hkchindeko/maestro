@@ -16,7 +16,8 @@ class _ContextAdapter(logging.LoggerAdapter):
     def process(
         self, msg: Any, kwargs: MutableMapping[str, Any]
     ) -> tuple[Any, MutableMapping[str, Any]]:
-        ctx_parts = [f"{k}={v}" for k, v in self.extra.items() if v is not None]
+        extra = self.extra or {}
+        ctx_parts = [f"{k}={v}" for k, v in extra.items() if v is not None]
         prefix = " ".join(ctx_parts)
         if prefix:
             msg = f"{prefix} {msg}"
