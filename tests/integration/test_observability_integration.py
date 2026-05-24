@@ -15,7 +15,7 @@ from maestro.core.state import (
     RunningEntry,
 )
 from maestro.observability.snapshot import SnapshotBuilder
-from maestro.observability.tokens import compute_live_runtime, compute_token_delta
+from maestro.observability.tokens import compute_token_delta
 from maestro.tracker.base import Issue
 
 

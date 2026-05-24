@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -240,7 +239,6 @@ class TestSortForDispatch:
             Issue(id="2", identifier="ABC-2", title="T2", priority=2, created_at=now),
         ]
         # Use the orchestrator's sort method
-        from maestro.core.orchestrator import Orchestrator
 
         # Create a minimal orchestrator to test sorting
         mock_tracker = MagicMock()
@@ -277,7 +275,6 @@ class TestSortForDispatch:
             Issue(id="1", identifier="ABC-1", title="T1", priority=None, created_at=now),
             Issue(id="2", identifier="ABC-2", title="T2", priority=1, created_at=now),
         ]
-        from maestro.core.orchestrator import Orchestrator
 
         mock_tracker = MagicMock()
         mock_workspace = MagicMock()
@@ -312,7 +309,6 @@ class TestShouldDispatch:
 
     @pytest.mark.asyncio
     async def test_eligible_issue(self) -> None:
-        from maestro.core.orchestrator import Orchestrator
 
         mock_tracker = MagicMock()
         mock_workspace = MagicMock()
@@ -347,7 +343,6 @@ class TestShouldDispatch:
 
     @pytest.mark.asyncio
     async def test_todo_with_non_terminal_blocker_not_eligible(self) -> None:
-        from maestro.core.orchestrator import Orchestrator
 
         mock_tracker = MagicMock()
         mock_workspace = MagicMock()
@@ -383,7 +378,6 @@ class TestShouldDispatch:
 
     @pytest.mark.asyncio
     async def test_todo_with_terminal_blocker_eligible(self) -> None:
-        from maestro.core.orchestrator import Orchestrator
 
         mock_tracker = MagicMock()
         mock_workspace = MagicMock()
@@ -419,7 +413,6 @@ class TestShouldDispatch:
 
     @pytest.mark.asyncio
     async def test_claimed_issue_not_eligible(self) -> None:
-        from maestro.core.orchestrator import Orchestrator
 
         mock_tracker = MagicMock()
         mock_workspace = MagicMock()

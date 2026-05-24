@@ -8,7 +8,6 @@ import pytest
 
 from maestro.core.workflow import (
     MissingWorkflowFileError,
-    WorkflowDefinition,
     WorkflowFrontMatterNotMapError,
     WorkflowParseError,
     load_workflow,

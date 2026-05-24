@@ -112,6 +112,9 @@ def load_workflow(path: Path | str | None = None) -> WorkflowDefinition:
     except yaml.YAMLError as e:
         raise WorkflowParseError(f"Invalid YAML front matter: {e}") from e
 
+    if front_matter is None:
+        front_matter = {}
+
     if not isinstance(front_matter, dict):
         raise WorkflowFrontMatterNotMapError(
             f"YAML front matter must be a map/object, got {type(front_matter).__name__}"

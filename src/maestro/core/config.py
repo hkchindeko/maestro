@@ -10,7 +10,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # Pattern for $VAR_NAME references
 _ENV_VAR_PATTERN = re.compile(r"^\$([A-Za-z_][A-Za-z0-9_]*)$")
@@ -47,9 +47,12 @@ def expand_path(value: str, workflow_dir: Path | None = None) -> str:
     if resolved is not None:
         expanded = resolved
 
-    # Resolve relative paths against workflow directory
     path = Path(expanded)
-    if not path.is_absolute() and workflow_dir is not None:
+    if path.is_absolute():
+        return str(path)
+
+    # Resolve relative paths against workflow directory
+    if workflow_dir is not None:
         path = workflow_dir / path
 
     return str(path.resolve())
@@ -188,11 +191,10 @@ class WorkflowConfig(BaseModel):
     codex: CodexConfig = Field(default_factory=CodexConfig)
     server: ServerConfig = Field(default_factory=ServerConfig)
 
+    model_config = ConfigDict(extra="ignore")
+
     @model_validator(mode="before")
     @classmethod
     def ignore_unknown_keys(cls, data: Any) -> Any:
         """Pass through all data — Pydantic's extra='ignore' handles unknown keys."""
         return data
-
-    class Config:
-        extra = "ignore"

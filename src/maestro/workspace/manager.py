@@ -14,7 +14,7 @@ from pathlib import Path
 from maestro.core.config import HooksConfig
 
 from maestro.workspace.hooks import HookResult, run_hook, run_hook_best_effort
-from maestro.workspace.safety import sanitize_key, validate_workspace_path, WorkspacePathError
+from maestro.workspace.safety import sanitize_key, validate_workspace_path
 
 logger = logging.getLogger(__name__)
 

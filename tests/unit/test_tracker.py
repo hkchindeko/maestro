@@ -8,7 +8,6 @@ from __future__ import annotations
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
 
 from maestro.tracker.base import BlockerRef, Issue, IssueSnapshot, Tracker

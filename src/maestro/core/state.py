@@ -154,6 +154,7 @@ class OrchestratorState:
             existing = self.retry_attempts.get(entry.issue_id)
             if existing and existing.timer_handle and not existing.timer_handle.done():
                 existing.timer_handle.cancel()
+                await asyncio.sleep(0)
             self.retry_attempts[entry.issue_id] = entry
             self.claimed.add(entry.issue_id)
 

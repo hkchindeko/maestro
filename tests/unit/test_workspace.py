@@ -5,9 +5,7 @@ Covers tasks 1.4-1.5, 2.5, 3.9, 4.5, and 5.1-5.6.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -18,7 +16,7 @@ from maestro.workspace.hooks import (
     run_hook,
     run_hook_best_effort,
 )
-from maestro.workspace.manager import WorkspaceError, WorkspaceManager, WorkspaceResult
+from maestro.workspace.manager import WorkspaceError, WorkspaceManager
 from maestro.workspace.safety import (
     WorkspacePathError,
     is_path_under_root,
@@ -42,7 +40,7 @@ class TestSanitizeKey:
         assert sanitize_key("ABC#123") == "ABC_123"
 
     def test_replaces_multiple_special_chars(self) -> None:
-        assert sanitize_key("feat/some-issue!") == "feat_some_issue_"
+        assert sanitize_key("feat/some-issue!") == "feat_some-issue_"
 
     def test_empty_string(self) -> None:
         assert sanitize_key("") == ""

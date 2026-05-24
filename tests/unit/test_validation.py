@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
 
 from maestro.core.config import WorkflowConfig
 from maestro.core.validation import validate_dispatch_config

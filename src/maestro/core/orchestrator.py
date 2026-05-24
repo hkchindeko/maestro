@@ -8,17 +8,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import signal
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
-from maestro.agent.base import AgentRunner, AgentSession, EventCallback
+from maestro.agent.base import AgentRunner, AgentSession
 from maestro.core.config import WorkflowConfig
 from maestro.core.reconciliation import reconcile_stalled_runs, reconcile_tracker_states
 from maestro.core.state import OrchestratorState, RetryEntry, RunningEntry
 from maestro.core.validation import validate_dispatch_config
-from maestro.core.workflow import WorkflowDefinition, resolve_config
+from maestro.core.workflow import WorkflowDefinition
 from maestro.prompt.builder import PromptBuilder
 from maestro.tracker.base import Issue, Tracker
 from maestro.workspace.manager import WorkspaceManager

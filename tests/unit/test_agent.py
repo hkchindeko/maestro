@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -229,11 +228,13 @@ class TestCodexAgentRunner:
             events.append(event)
 
         # Mock the subprocess
-        mock_process = AsyncMock()
+        mock_process = MagicMock()
         mock_process.pid = 12345
-        mock_process.stdin = AsyncMock()
+        mock_process.stdin = MagicMock()
+        mock_process.stdin.drain = AsyncMock()
         mock_process.stdout = AsyncMock()
         mock_process.stderr = AsyncMock()
+        mock_process.wait = AsyncMock()
 
         # Mock responses for thread/create and turn/start
         responses = [
@@ -407,8 +408,6 @@ class TestCodexAgentRunner:
     @pytest.mark.asyncio
     async def test_token_accounting_mock(self) -> None:
         """Test token accounting with mock token events (task 6.6)."""
-        runner = CodexAgentRunner(command="codex app-server")
-
         session = AgentSession(
             session_id="thread-1-turn-1",
             thread_id="thread-1",

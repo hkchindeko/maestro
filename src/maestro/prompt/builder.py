@@ -8,7 +8,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from jinja2 import BaseLoader, Environment, StrictUndefined, TemplateError, TemplateSyntaxError
+from jinja2 import (
+    BaseLoader,
+    Environment,
+    StrictUndefined,
+    TemplateAssertionError,
+    TemplateError,
+    TemplateSyntaxError,
+)
 
 from maestro.prompt.models import IssueContext
 
@@ -48,6 +55,7 @@ class PromptBuilder:
         self._env = Environment(
             loader=BaseLoader(),
             undefined=StrictUndefined,
+            finalize=lambda value: "" if value is None else value,
         )
 
     def parse(self, template: str) -> Any:
@@ -64,6 +72,8 @@ class PromptBuilder:
         """
         try:
             return self._env.from_string(template)
+        except TemplateAssertionError as e:
+            raise TemplateRenderError(f"Template render error: {e}") from e
         except TemplateSyntaxError as e:
             raise TemplateParseError(f"Invalid template syntax: {e}") from e
 
@@ -92,8 +102,10 @@ class PromptBuilder:
 
         compiled = self.parse(template)
 
-        context = issue.to_dict()
-        context["attempt"] = attempt
+        context = {
+            "issue": issue.to_dict(),
+            "attempt": attempt,
+        }
 
         try:
             return compiled.render(**context)

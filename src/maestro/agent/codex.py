@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import signal
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,8 +22,6 @@ from maestro.agent.base import (
     TurnResult,
 )
 from maestro.agent.events import (
-    extract_rate_limit,
-    extract_token_usage,
     parse_agent_event,
     parse_json_line,
 )
