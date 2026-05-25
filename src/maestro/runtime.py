@@ -17,6 +17,8 @@ from maestro.core.orchestrator import Orchestrator
 from maestro.core.state import OrchestratorState
 from maestro.core.workflow import WorkflowDefinition
 from maestro.prompt.builder import PromptBuilder
+from maestro.sandbox.base import SandboxManager
+from maestro.sandbox.local import LocalSandbox
 from maestro.tracker.base import Tracker
 from maestro.tracker.linear import LinearTracker
 from maestro.workspace.manager import WorkspaceManager
@@ -70,8 +72,16 @@ def build_tracker(config: WorkflowConfig) -> Tracker:
     raise RuntimeCompositionError(f"unsupported_tracker_kind: {config.tracker.kind!r}")
 
 
-def build_agent_runner(config: WorkflowConfig) -> AgentRunner:
-    """Build the configured coding-agent runner."""
+def build_agent_runner(
+    config: WorkflowConfig,
+    sandbox: SandboxManager | None = None,
+) -> AgentRunner:
+    """Build the configured coding-agent runner.
+
+    Args:
+        config: Resolved workflow configuration.
+        sandbox: Optional sandbox manager to inject into the agent runner.
+    """
     if config.agent.kind != "codex":
         raise RuntimeCompositionError(f"unsupported_agent_kind: {config.agent.kind!r}")
 
@@ -80,7 +90,22 @@ def build_agent_runner(config: WorkflowConfig) -> AgentRunner:
         command=command,
         read_timeout_ms=config.codex.read_timeout_ms,
         turn_timeout_ms=config.codex.turn_timeout_ms,
+        sandbox=sandbox,
     )
+
+
+def build_sandbox_manager(config: WorkflowConfig) -> SandboxManager:
+    """Build the configured sandbox manager.
+
+    Returns:
+        A SandboxManager instance matching ``sandbox.kind``.
+
+    Raises:
+        RuntimeCompositionError: If the sandbox kind is not supported.
+    """
+    if config.sandbox.kind == "local":
+        return LocalSandbox()
+    raise RuntimeCompositionError(f"unsupported_sandbox_kind: {config.sandbox.kind!r}")
 
 
 def build_workspace_manager(config: WorkflowConfig) -> WorkspaceManager:
@@ -99,9 +124,10 @@ def build_components(definition: WorkflowDefinition, config: WorkflowConfig) -> 
         raise RuntimeCompositionError(f"unsupported_sandbox_kind: {config.sandbox.kind!r}")
 
     tracker = build_tracker(config)
+    sandbox_manager = build_sandbox_manager(config)
     workspace_manager = build_workspace_manager(config)
     prompt_builder = PromptBuilder()
-    agent_runner = build_agent_runner(config)
+    agent_runner = build_agent_runner(config, sandbox=sandbox_manager)
     orchestrator = Orchestrator(
         tracker=tracker,
         workspace_manager=workspace_manager,
@@ -109,6 +135,7 @@ def build_components(definition: WorkflowDefinition, config: WorkflowConfig) -> 
         prompt_builder=prompt_builder,
         config=config,
         definition=definition,
+        sandbox_manager=sandbox_manager,
     )
 
     return RuntimeComponents(

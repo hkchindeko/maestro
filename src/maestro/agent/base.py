@@ -10,7 +10,10 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
+
+if TYPE_CHECKING:
+    from maestro.sandbox.base import SandboxManager
 
 
 class AgentEventType(str, Enum):
@@ -67,6 +70,7 @@ class AgentSession:
     session_id: str
     thread_id: str
     turn_id: str
+    sandbox_id: str | None = None
     codex_app_server_pid: str | None = None
     last_codex_event: str | None = None
     last_codex_timestamp: datetime | None = None
@@ -119,8 +123,19 @@ EventCallback = Callable[[AgentEvent], None]
 class AgentRunner(ABC):
     """Abstract base class for coding agent runners.
 
-    Per SPEC §10.7, the agent runner wraps workspace + prompt + app-server client.
+    Per SPEC §10.7, the agent runner wraps workspace + prompt + sandbox + app-server client.
     """
+
+    def __init__(self, sandbox: SandboxManager | None = None) -> None:
+        """Initialize the agent runner.
+
+        Args:
+            sandbox: Optional sandbox manager for provisioning sandbox
+                environments. If None, implementations MAY use the workspace
+                path directly as the execution environment (equivalent to
+                ``sandbox.kind == "local"``).
+        """
+        self._sandbox = sandbox
 
     @abstractmethod
     async def start_session(
@@ -130,6 +145,9 @@ class AgentRunner(ABC):
         on_event: EventCallback | None = None,
     ) -> AgentSession:
         """Start a coding agent session.
+
+        Per SPEC §10.2. Implementations SHOULD provision the sandbox
+        environment before launching the agent subprocess.
 
         Args:
             workspace_path: Absolute path to the per-issue workspace.

@@ -25,6 +25,7 @@ from maestro.agent.events import (
     parse_agent_event,
     parse_json_line,
 )
+from maestro.sandbox.base import SandboxManager
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +69,7 @@ class CodexAgentRunner(AgentRunner):
         command: str = "codex app-server",
         read_timeout_ms: int = DEFAULT_READ_TIMEOUT_MS,
         turn_timeout_ms: int = DEFAULT_TURN_TIMEOUT_MS,
+        sandbox: SandboxManager | None = None,
     ) -> None:
         """Initialize the Codex agent runner.
 
@@ -75,7 +77,10 @@ class CodexAgentRunner(AgentRunner):
             command: The shell command to launch the app-server.
             read_timeout_ms: Request/response timeout in milliseconds.
             turn_timeout_ms: Total turn stream timeout in milliseconds.
+            sandbox: Optional sandbox manager for provisioning sandbox
+                environments before agent launch.
         """
+        super().__init__(sandbox=sandbox)
         self._command = command
         self._read_timeout = read_timeout_ms / 1000.0
         self._turn_timeout = turn_timeout_ms / 1000.0
@@ -94,7 +99,8 @@ class CodexAgentRunner(AgentRunner):
     ) -> AgentSession:
         """Start a Codex app-server session.
 
-        Per SPEC §10.2.
+        Per SPEC §10.2. Provisions the sandbox environment (if configured)
+        before launching the agent subprocess.
 
         Args:
             workspace_path: Absolute path to the per-issue workspace.
@@ -110,11 +116,20 @@ class CodexAgentRunner(AgentRunner):
         self._on_event = on_event
         self._event_queue = asyncio.Queue()
 
+        # Provision sandbox if configured
+        sandbox_id: str | None = None
+        effective_path = workspace_path
+        if self._sandbox is not None:
+            result = await self._sandbox.provision(workspace_path)
+            sandbox_id = result.sandbox_id
+            effective_path = result.effective_path
+
         # Launch the app-server subprocess
-        await self._launch(self._command, workspace_path)
+        await self._launch(self._command, effective_path)
 
         # Initialize session (thread creation, prompt injection)
-        session = await self._initialize_session(workspace_path, prompt)
+        session = await self._initialize_session(effective_path, prompt)
+        session.sandbox_id = sandbox_id
 
         self._current_session = session
 
@@ -343,7 +358,7 @@ class CodexAgentRunner(AgentRunner):
     async def stop_session(self, session: AgentSession) -> None:
         """Stop the agent session and clean up.
 
-        Per SPEC §10.7.
+        Per SPEC §10.7. Tears down the sandbox as a best-effort operation.
 
         Args:
             session: The active agent session to stop.
@@ -367,6 +382,17 @@ class CodexAgentRunner(AgentRunner):
                     await self._process.wait()
                 except ProcessLookupError:
                     pass
+
+        # Teardown sandbox (best-effort)
+        if self._sandbox is not None and session.sandbox_id is not None:
+            try:
+                await self._sandbox.teardown(session.sandbox_id)
+            except Exception:
+                logger.warning(
+                    "Sandbox teardown failed for sandbox_id=%s",
+                    session.sandbox_id,
+                    exc_info=True,
+                )
 
         self._process = None
         self._current_session = None

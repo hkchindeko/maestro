@@ -18,6 +18,7 @@ from maestro.core.state import OrchestratorState, RetryEntry, RunningEntry
 from maestro.core.validation import validate_dispatch_config
 from maestro.core.workflow import WorkflowDefinition
 from maestro.prompt.builder import PromptBuilder
+from maestro.sandbox.base import SandboxManager
 from maestro.tracker.base import Issue, Tracker
 from maestro.workspace.manager import WorkspaceManager
 
@@ -44,6 +45,7 @@ class Orchestrator:
         prompt_builder: PromptBuilder,
         config: WorkflowConfig,
         definition: WorkflowDefinition,
+        sandbox_manager: SandboxManager | None = None,
     ) -> None:
         """Initialize the orchestrator.
 
@@ -54,6 +56,8 @@ class Orchestrator:
             prompt_builder: Prompt template renderer.
             config: Resolved workflow configuration.
             definition: Parsed workflow definition.
+            sandbox_manager: Optional sandbox manager for provisioning
+                sandbox environments per SPEC §3.1 and §10.2.
         """
         self._tracker = tracker
         self._workspace = workspace_manager
@@ -61,6 +65,7 @@ class Orchestrator:
         self._prompt_builder = prompt_builder
         self._config = config
         self._definition = definition
+        self._sandbox = sandbox_manager
         self._state = OrchestratorState(
             poll_interval_ms=config.polling.interval_ms,
             max_concurrent_agents=config.agent.max_concurrent_agents,
